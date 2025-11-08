@@ -17,5 +17,17 @@ export default defineConfig({
         assetFileNames: "[name].[ext]",
       },
     },
+    watch: {
+      include: "src/**",
+    },
   },
+  plugins: [
+    {
+      name: "manual-watch",
+      buildStart() {
+        this.addWatchFile(resolve(__dirname, "src/background.ts"));
+        this.addWatchFile(resolve(__dirname, "src/content.ts"));
+      },
+    },
+  ],
 });
