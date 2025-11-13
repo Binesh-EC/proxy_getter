@@ -1,17 +1,107 @@
-import { generateProxies, getNumOfProxies } from "./utils/api";
+import { getNumOfProxies, generateProxies,cronjobRequest } from "./utils/api";
 
 const proxyWebUri = "https://www.711proxy.com/dashboard/Socks5-proxies";
 let running = false;
-const delayBetween = 60000;
+let lastExecutedHour: number | null = null; // ذخیره آخرین ساعتی که processGetting اجرا شده
+// const delayBetween = 60000;
+
+// Cronjob configuration - هر 5 دقیقه یکبار
+const CRONJOB_URL = "http://haproxy.load.com:5050/api/push/0EABY6IS2ZM42F3ngkfBrUf8or4UItvF?status=up&msg=OK&ping="; 
+const CRONJOB_INTERVAL = 1 * 60 * 1000; // 5 دقیقه به میلی‌ثانیه
 const availableNumberOfProxies = [
   1, 10, 50, 100, 200, 300, 400, 500, 1000, 5000, 10000,
 ];
 
-setInterval(() => {
-  processGetting();
-}, delayBetween);
+function getTimeUntilNextRun(): number {
+  // Get current time as timestamp (UTC-based, timezone-independent)
+  const now = Date.now();
+  const nowDate = new Date(now);
+  
+  console.log("nowDate:", nowDate);
+  console.log("nowDate UTC:", nowDate.toUTCString());
+  
+  // Get current UTC time components
+  const currentYear = nowDate.getUTCFullYear();
+  const currentMonth = nowDate.getUTCMonth();
+  const currentDate = nowDate.getUTCDate();
+  const currentHour = nowDate.getUTCHours();
+  const currentMinute = nowDate.getUTCMinutes();
+    
+  // Check if it's exactly XX:32 UTC
+  // Only start immediately if:
+  // 1. We're in minute 32
+  // 2. We haven't executed for this hour yet (lastExecutedHour !== currentHour)
+  if (currentMinute === 32 && lastExecutedHour !== currentHour) {
+    console.log(`✅ It's ${currentHour}:32 UTC now! Starting immediately.`);
+    return 0; // Start immediately
+  }
+  
+  // Calculate target time: next hour at minute 32
+  let targetHour = currentHour;
+  
+  if (currentMinute < 32) {
+    // If current minute is less than 32, schedule for same hour at 32
+    targetHour = currentHour;
+  } else {
+    // If current minute is >= 32, schedule for next hour at 32
+    targetHour = currentHour + 1;
+  }
+  
+  // Create target time for XX:32 UTC (Date.UTC handles overflow automatically)
+  const targetTime = Date.UTC(
+    currentYear,
+    currentMonth,
+    currentDate,
+    targetHour,
+    32, // minute
+    0,  // second
+    0   // millisecond
+  );
+    
+  const timeUntilNext = targetTime - now;
+  const hours = Math.floor(timeUntilNext / 1000 / 60 / 60);
+  const minutes = Math.floor((timeUntilNext / 1000 / 60) % 60);
+  
+  // Convert UTC time to Iran local time (UTC+3:30)
+  const targetDateIran = new Date(targetTime);
+  const iranTime = targetDateIran.toLocaleString('en-US', { 
+    timeZone: 'Asia/Tehran',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  });
+  
+  console.log(`⏰ Time until next run: ${hours} hours and ${minutes} minutes (at ${targetHour}:32 UTC / ${iranTime} Iran time)`);
+  
+  return timeUntilNext;
+}
 
-processGetting();
+function scheduleNextRun() {
+  const timeUntilNext = getTimeUntilNextRun();
+  console.log("timeUntilNext:", timeUntilNext);
+  const nextRunDate = new Date(Date.now() + timeUntilNext);
+  const hours = Math.floor(timeUntilNext / 1000 / 60 / 60);
+  const minutes = Math.floor((timeUntilNext / 1000 / 60) % 60);
+  console.log(
+    `Next run scheduled in ${hours} hours and ${minutes} minutes (${nextRunDate.toUTCString()})`
+  );
+  
+  setTimeout(() => {
+    processGetting().then(() => {
+      scheduleNextRun();
+    });
+  }, timeUntilNext);
+}
+scheduleNextRun();
+
+
+cronjobRequest(CRONJOB_URL); 
+setInterval(() => {
+  cronjobRequest(CRONJOB_URL);
+}, CRONJOB_INTERVAL);
 
 async function processGetting() {
   if (running) {
@@ -19,10 +109,14 @@ async function processGetting() {
     return;
   }
   running = true;
+  
+  // ثبت ساعت فعلی به عنوان آخرین ساعت اجرا شده
+  const now = new Date();
+  lastExecutedHour = now.getUTCHours();
+  console.log(`📝 Marked hour ${lastExecutedHour} as executed`);
 
   try {
-    console.log("Processing...");
-
+    console.log("Processing...", new Date().toLocaleString());
     const numResp = await getNumOfProxies();
 
     let desiredNumber = 0;
@@ -41,7 +135,6 @@ async function processGetting() {
         "Could not parse desired number of proxies from response:",
         numResp
       );
-      running = false;
       return;
     }
 
