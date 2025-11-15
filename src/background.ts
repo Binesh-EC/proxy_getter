@@ -2,12 +2,12 @@ import { getNumOfProxies, generateProxies,cronjobRequest } from "./utils/api";
 
 const proxyWebUri = "https://www.711proxy.com/dashboard/Socks5-proxies";
 let running = false;
-let lastExecutedHour: number | null = null; // ذخیره آخرین ساعتی که processGetting اجرا شده
 // const delayBetween = 60000;
 
-// Cronjob configuration - هر 5 دقیقه یکبار
+// Cronjob configuration - every 5 minutes
 const CRONJOB_URL = "http://haproxy.load.com:5050/api/push/0EABY6IS2ZM42F3ngkfBrUf8or4UItvF?status=up&msg=OK&ping="; 
-const CRONJOB_INTERVAL = 1 * 60 * 1000; // 5 دقیقه به میلی‌ثانیه
+const CRONJOB_INTERVAL = 1 * 60 * 1000; // 5 minutes in milliseconds
+const PROCESS_INTERVAL = 5 * 60 * 1000; // 5 minutes in milliseconds for processGetting execution
 const availableNumberOfProxies = [
   1, 10, 50, 100, 200, 300, 400, 500, 1000, 5000, 10000,
 ];
@@ -26,7 +26,7 @@ function formatIranTime(input: Date | number): string {
   });
 }
 
-function getTimeUntilNextRun(): number {
+function getTimeUntilNextScheduledRun(): number {
   // Get current time as timestamp (UTC-based, timezone-independent)
   const now = Date.now();
   const nowDate = new Date(now);
@@ -41,16 +41,13 @@ function getTimeUntilNextRun(): number {
   const currentHour = nowDate.getUTCHours();
   const currentMinute = nowDate.getUTCMinutes();
     
-  // Check if it's exactly XX:32 UTC
-  // Only start immediately if:
-  // 1. We're in minute 32
-  // 2. We haven't executed for this hour yet (lastExecutedHour !== currentHour)
-  if (currentMinute === 32 && lastExecutedHour !== currentHour) {
+  // Check if it's exactly XX:32 UTC - start immediately
+  if (currentMinute === 32) {
     console.log(`✅ It's ${currentHour}:32 UTC now! Starting immediately.`);
     return 0; // Start immediately
   }
   
-  // Calculate target time: next hour at minute 32
+  // Calculate target time: next occurrence of XX:32 UTC
   let targetHour = currentHour;
   
   if (currentMinute < 32) {
@@ -79,20 +76,24 @@ function getTimeUntilNextRun(): number {
   // Convert UTC time to Iran local time (UTC+3:30)
   const iranTime = formatIranTime(targetTime);
   
-  console.log(`⏰ Time until next run: ${hours} hours and ${minutes} minutes (at ${targetHour}:32 UTC / ${iranTime} Iran time)`);
+  console.log(`⏰ Scheduled initial run in ${hours} hours and ${minutes} minutes (at ${targetHour}:32 UTC / ${iranTime} Iran time)`);
   
   return timeUntilNext;
 }
 
-function scheduleNextRun() {
-  const timeUntilNext = getTimeUntilNextRun();
-  setTimeout(() => {
-    processGetting().then(() => {
-      scheduleNextRun();
-    });
-  }, timeUntilNext);
-}
-scheduleNextRun();
+// Schedule initial run at the nearest XX:32 UTC time (only once)
+const timeUntilInitialRun = getTimeUntilNextScheduledRun();
+setTimeout(() => {
+  console.log("🚀 Starting initial scheduled run at XX:32 UTC");
+  processGetting();
+  
+  // Start the 5-minute interval after the initial run
+  console.log("🔄 Starting 5-minute interval after initial run");
+  setInterval(() => {
+    console.log("interval running...");
+    processGetting();
+  }, PROCESS_INTERVAL);
+}, timeUntilInitialRun);
 
 
 cronjobRequest(CRONJOB_URL); 
@@ -106,11 +107,6 @@ async function processGetting() {
     return;
   }
   running = true;
-  
-  // ثبت ساعت فعلی به عنوان آخرین ساعت اجرا شده
-  const now = new Date();
-  lastExecutedHour = now.getUTCHours();
-  console.log(`📝 Marked hour ${lastExecutedHour} as executed`);
 
   try {
     console.log("Processing...", formatIranTime(new Date()));
