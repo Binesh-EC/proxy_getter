@@ -209,7 +209,7 @@ function openTab(url: string): Promise<chrome.tabs.Tab> {
 
 function executeInTab(tabId: number, desiredCount: number): Promise<any> {
   return new Promise((resolve, reject) => {
-    const func = (count: number) => {
+    const func = async (count: number) => {
       function findSelectAfterLabel(labelText: string): HTMLElement | null {
         const wrappers = Array.from(document.querySelectorAll(".prxoyListRef"));
 
@@ -224,6 +224,25 @@ function executeInTab(tabId: number, desiredCount: number): Promise<any> {
           }
         }
 
+        return null;
+      }
+      async function findSelectAfterLabelWithRetry(
+        labelText: string,
+        maxRetries: number = 3,
+        delayMs: number = 500
+      ): Promise<HTMLElement | null> {
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+          const select = findSelectAfterLabel(labelText);
+          if (select) {
+            return select;
+          }
+          if (attempt < maxRetries) {
+            console.log(
+              `Attempt ${attempt}/${maxRetries} failed to find select for "${labelText}", retrying...`
+            );
+            await new Promise((resolve) => setTimeout(resolve, delayMs));
+          }
+        }
         return null;
       }
       function clickSelectOptionByNumber(number: string | number) {
@@ -292,8 +311,8 @@ function executeInTab(tabId: number, desiredCount: number): Promise<any> {
       }
       try {
         const select =
-          findSelectAfterLabel("Number of proxies") ||
-          findSelectAfterLabel("Number of proxy");
+          (await findSelectAfterLabelWithRetry("Number of proxies")) ||
+          (await findSelectAfterLabelWithRetry("Number of proxy"));
         if (!select) {
           return { error: "Could not find select for 'Number of proxies'." };
         }
